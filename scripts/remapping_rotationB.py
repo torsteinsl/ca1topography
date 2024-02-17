@@ -10,8 +10,7 @@ import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import scikit_posthocs as sp
-from scipy.stats import pearsonr, kruskal
+from scipy.stats import pearsonr
 
 #%% Load data
 
@@ -85,21 +84,4 @@ for cellNo, PC in enumerate(placecells):
     rot180[cellNo] = pearsonr(mapA, np.rot90(mapB,2).flatten())[0]
     rot270[cellNo] = pearsonr(mapA, np.rot90(mapB,3).flatten())[0]
     A2A[cellNo] = pearsonr(mapA, mapA2)[0]
-    
-#%% Visualize
-deg = u'\N{DEGREE SIGN}'
 
-dfPlot = pd.DataFrame({'B 0'+deg: rot0, 'B 90'+deg: rot90, 'B 180'+deg: rot180, 'B 270'+deg: rot270, 'A\'': A2A}) 
-
-fig, ax = plt.subplots(figsize=(4,4))   
-sns.boxplot(data = dfPlot, ax = ax, palette = 'viridis')
-ax.set_title('Tuning map correlation of A to rotations of B')
-ax.spines[['top', 'right']].set_visible(False)
-ax.set_ylim([-0.6,1])
-plt.tight_layout()
-
-plt.savefig('N:/axon2pmini/Article/Figures/Supplementary/remapping_B_rotations.svg', format = 'svg')  
-
-stats = kruskal(rot0, rot90, rot180, rot270, A2A)
-
-postp = sp.posthoc_dunn([rot0, rot90, rot180, rot270, A2A], p_adjust = 'bonferroni')
