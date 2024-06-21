@@ -1017,14 +1017,116 @@ def f_test(group1, group2):
     
 #%% 
 
+def cohen_d(data1, data2):
+
+    """
+    Calculate Cohen´s D as a measure of effect size. Must provide two samples, 
+    that don´t need to be of similar size, and calculates a pooled std for the 
+    samples. The effect size if defined as the number of standard deviations 
+    the difference between the sample means are, and ranges from 0 to infinity. 
+    Low Cohen´s D (i.e. <0.2) may indicate low practical significance, even if 
+    hypothesis testing are significant.
+    
+    	data1: Array of values for sample 1, must be one-dimentional
+    	data2: Array of values for sample 2, must be one-dimentional
+     
+    	cd: Cohen´s D, float
+        
+    """
+
+    # Get the size of each sample
+    n1, n2 = len(data1), len(data2)
+
+    # Calculate the mean and variance of the samples
+    m1, m2 = np.mean(data1), np.mean(data2)
+    s1, s2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+
+    # Calculate the pooled standard deviation
+    s = np.sqrt(((n1 - 1) * s1 + (n2 - 1) * s2) / (n1 + n2 - 2))
+    
+    # Return the effect size (Cohen´s D)
+    d = (abs(m1 - m2)) / s
+
+    return d
+
+#%%
+
+def get_placefields_distance(session_dict):
+    
+    """    
+    Calculate the distance between place fields for place cells. 
+    If there are several place fields, picks out the most prominent one. 
+    
+    Input: Session dictionary
+    Returns: 
+        placefield: dict of NATs with the place field data. 
+        placefield_coords: dict of centroid coordinates for the place fields
+        field_distance: dict of the pairwise distances between place fields (cm)
+            
+    """
+    
+    nSessions = len(session_dict['dfNAT'])
+    placecell_dict = session_dict['Placecell']
+    
+    placefield = {}
+    placefield_coords = {}
+    field_distance = {}
+    
+    binSize = 2.5
+    
+    for sessionNo in range(nSessions):
+        nPC = len(placecell_dict['NAT'+str(sessionNo)][0])
+        placefield['NAT'+str(sessionNo)]=[]
+        placefield_coords['NAT'+str(sessionNo)] = np.full([nPC,2],np.nan)
+        
+        for placecellNo in range(nPC):    
+            # Get the cell number and convert to NATEX id
+            cellNo = placecell_dict['NAT'+str(sessionNo)][0][placecellNo]+1
+            
+            if type(session_dict['Placefields']['NAT'+str(sessionNo)]['N'+str(cellNo)]) == float:
+               placefield['NAT'+str(sessionNo)].append([np.nan, np.nan])
+               
+               if cellNo in placecell_dict['NAT'+str(sessionNo)][0]:
+                   print('Data lost for NAT '+str(sessionNo) +' N ' + str(cellNo))
+                   
+            else: 
+               fields, fields_map = session_dict['Placefields']['NAT'+str(sessionNo)]['N'+str(cellNo)] # Grab the fields data
+                    
+               if len(fields) == 1: # Only 1 detected field
+                   placefield['NAT'+str(sessionNo)].append([fields[0], fields_map])
+               
+               elif len(fields) > 1: # More than 1 detected field, take the most prominent one (highest mean rate)
+                   field_mean_rates = []
+                   
+                   for fieldNo in range(len(fields)): field_mean_rates.append(fields[fieldNo]['mean_rate'])
+                   
+                   field_idx = np.where(field_mean_rates==max(field_mean_rates))[0][0]
+                  
+                   placefield['NAT'+str(sessionNo)].append([fields[field_idx], fields_map])
+      
+            # Get the place field coordinates (centroid) for each placecells place field (x,y)
+            if type(placefield['NAT'+str(sessionNo)][placecellNo][0]) == dict:
+                placefield_coords['NAT'+str(sessionNo)][placecellNo] = placefield['NAT'+str(sessionNo)][placecellNo][0]['centroid_coords'][::-1]
+            if type(placefield['NAT'+str(sessionNo)][placecellNo][0]) != dict:
+                print('No place field found: Session',sessionNo,'Cell',cellNo)
+                placefield_coords['NAT'+str(sessionNo)][placecellNo] = placefield['NAT'+str(sessionNo)][placecellNo] # Set's the missing data to NaN
+        
+        # Calculate the pairwise distance between place fields of place cells, multiply by binning to get answer in cm          
+        field_distance['NAT'+str(sessionNo)] = (np.linalg.norm(placefield_coords['NAT'+str(sessionNo)]            
+           - placefield_coords['NAT'+str(sessionNo)][:,None], axis=-1))*binSize
+
+    return placefield, placefield_coords, field_distance
+
+#%% 
+
 def calc_weights(x, y, feature):
     
     """
     calc_weights(x, y, feature)
     
-    This function calculated the weights object to be used in esda.Moran.
+    This function calculates the weights object to be used in esda.Moran.
     That function is meant for directly neighbouring data, but can be used
-    for scatter data (islands) with not direct boarder if the weights are
+    for scatter data (islands) without direct boarders if the weights are
     adjusted accordingly. Here, this is achieved by saying that each datapoint 
     in the scatter is neighbouring all other datapoints. For each pair of data,
     the weight between them is calculated as the inverse of the distance
@@ -1635,41 +1737,41 @@ def poisson_model_lg(trainData, activityMatrix):
 
 def poisson_model_lg_vector(training_data, activity_matrix):
     
-    """    
-    Vectorised model for Bayesian decoding of position based on a Poisson distribution.  
+    """    
+    Vectorised model for Bayesian decoding of position based on a Poisson distribution.  
     
-    Probability = n * np.log(rate) - rate   
+    Probability = n * np.log(rate) - rate   
     
-        where:    
-            rate = the acitivty from all rate maps for all cells in given                          
-                    (i.j) from the training data                  
-            n = the activity vector (from the matrix) for all cells in                  
-                    that timebin from the test data                   
-       
+        where:    
+            rate = the acitivty from all rate maps for all cells in given                          
+                    (i.j) from the training data                  
+            n = the activity vector (from the matrix) for all cells in                  
+                    that timebin from the test data                   
+       
         The equation is the log off the Poisson distribution. The denominator 
-        (factorial of rate) is omitted as it is the logarithm of a constant.         
+        (factorial of rate) is omitted as it is the logarithm of a constant.         
         This bypasses the need of a interger rate, necessary since the rate is 
-        the sum of deconvolved activity for a given timebin.    
+        the sum of deconvolved activity for a given timebin.    
         
         Compared to the non-logaritmic metod, this uses the sum of the results
         across cells rather than the product.
         
-        Parameters    
-        ----------    
-        training_data : 3D np.array        
-            Array of data from training. Ratemaps for each cell. nCells x nBins x nBins    
+        Parameters    
+        ----------    
+        training_data : 3D np.array        
+            Array of data from training. Ratemaps for each cell. nCells x nBins x nBins    
             
-        activity_matrix : 2D np.array        
-            Array of with row = timebins and column = cell activity in that timebin.        
-            Rowwise vectors of the summed activity for all cells at given timebins.        
-            From the test data.    
+        activity_matrix : 2D np.array        
+            Array of with row = timebins and column = cell activity in that timebin.        
+            Rowwise vectors of the summed activity for all cells at given timebins.        
+            From the test data.    
             
-        Returns    
-        -------    
-        likelihood_matrix : 3D np.array        
-            Array for all timebins of size nBins x nBins, where the values indicate         
-            the decoded position on the test data from the predictions made on the train data.       
-           
+        Returns    
+        -------    
+        likelihood_matrix : 3D np.array        
+            Array for all timebins of size nBins x nBins, where the values indicate         
+            the decoded position on the test data from the predictions made on the train data.       
+           
         """
   
     tn = activity_matrix.shape[0]
@@ -1677,7 +1779,7 @@ def poisson_model_lg_vector(training_data, activity_matrix):
     likelihood_matrix = np.zeros((tn, x, y))
         
     def tile3d(n, x, y):
-        """        
+        """        
         Given a 1D vector, repeat it multiple times to generate a 3D vector of the shape (n.size, x, y), where each
         element `out[:, j, k]` is identical to the input `n`. THis requires Fortran ordering, rather than C ordering
         """
